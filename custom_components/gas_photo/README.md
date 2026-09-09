@@ -38,6 +38,14 @@ Two latest-observation sensors are discovered automatically. Neither has `state_
 
 Only **`gas_photo:gas_main`** is written, with `mean_type: 0`, `has_sum: true`, `unit_class: volume` and `m³`. No legacy sources or Energy settings are touched. Do not enable overlapping old and new sources together in Energy.
 
+## Energy dashboard setup
+
+After the first closed-hour statistics have been published, configure the Energy dashboard once: open **Energy**, click the pencil icon, and select **Gas photo · observation-hour consumption** as **Gas consumption**. It is the `gas_photo:gas_main` external statistic. Leave **Gas flow rate** empty unless you have a separate flow-rate source; costs are optional. Save and refresh the Energy page.
+
+This is deliberately not automated by the integration: existing Energy preferences and historic sources remain untouched. If an older gas statistic overlaps the same dates, remove it from the Energy configuration before adding this one, otherwise Home Assistant sums both sources.
+
+For a real-instance acceptance check, six June hourly buckets matched the exact photo ledger; their consumption differences totalled `9.054 m³`, which the Energy dashboard rounded to `9.05 m³`.
+
 The first exact observation is the consumption origin (sum zero). Each closed UTC hour containing observations uses that hour's latest reading and sum = reading − origin. If two observations occur in the first hour, the hourly sum can already include the difference from the first exact observation. Empty hours are not invented; change is attributed to the later observation hour. Current-hour readings remain in the exact ledger and publish after the hour closes.
 
 The baseline and capture times of publication-eligible records lock before the first Recorder queue attempt. This is deliberately conservative because a queued write may have committed even when a response is lost. Higher revisions can correct non-baseline values if all neighbors remain plausible. They retain previous revisions in Store audit history and regenerate observed buckets. A published capture timestamp, baseline value/time, or insertion before the published baseline is rejected and requires a separately reviewed migration. This prevents obsolete buckets or changing the consumption origin. Import initial historical records together in chronological batches starting at the earliest intended baseline.

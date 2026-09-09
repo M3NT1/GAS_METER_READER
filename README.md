@@ -101,6 +101,26 @@ Indítsd újra a Home Assistantot, majd a Mac alkalmazásban a **HA-kapcsolat** 
 
 A `queued` válasz a tartós naplózást és a Home Assistant feldolgozási sorába helyezést jelenti; a Recorder-eredményt a `get_statistics` olvasásával kell ellenőrizni. A komponens nem módosítja a korábbi Energy-forrásokat.
 
+### Energy dashboard egyszeri beállítása
+
+A feltöltés önmagában még nem választja ki az új statisztikát az Energy irányítópulton. Ez szándékosan külön Home Assistant-beállítás, így a meglévő energiaforrások és történeti adatok nem módosulnak automatikusan.
+
+1. Nyisd meg az **Energy** oldalt, majd kattints a jobb felső ceruza ikonra.
+2. A **Gas consumption** résznél válaszd ki a **Gas photo · observation-hour consumption** statisztikát. Ennek belső azonosítója: `gas_photo:gas_main`.
+3. A **Gas flow rate** mező maradhat üresen. A költségkövetés választható; ha nincs külön költségforrás, hagyd a **Do not track costs** beállításon.
+4. Mentsd el, majd frissítsd az Energy oldalt.
+
+Ha korábban más gázforrást használtál, csak akkor hagyd azt is aktívan az Energy oldalon, ha nincs vele azonos időszakra eső adat. Két átfedő forrás fogyasztását az Energy összeadja.
+
+Az éles ellenőrzés során a `get_statistics` visszaolvasása hat júniusi Recorder-sort adott, mindegyik megegyezett a pontos fotónaplóval. A hozzájuk tartozó fogyasztási különbségek összege `9.054 m³`; az Energy grafikon ezt helyesen, `9.05 m³` értékként jelenítette meg.
+
+### Feltöltés ellenőrzése
+
+- A Mac alkalmazásban a sikeres küldés után a fotó státusza **Szinkronizált**.
+- A `gas_photo.get_readings` a képkészítés eredeti, másodperctörtet és időzóna tartalmazó idejét adja vissza.
+- A `gas_photo.get_statistics` a Recorderbe írt órás sorokat olvassa vissza. REST-hívásnál az eredmény a Home Assistant `service_response` mezőjében található.
+- Az Energy grafikon a két egymást követő mérőállás közötti különbséget mutatja abban az órában, amelyikhez a későbbi fotó tartozik. Nem tölti ki mesterségesen a képek közötti órákat vagy napokat.
+
 ## Adatok és adatvédelem
 
 Futás közben a `data/` könyvtárban keletkeznek az eredetik, előnézetek, SQLite-napló, tanítóhalmazok és modellek. Ezek szándékosan ki vannak zárva a Gitből, mert személyes fotókat, helyi útvonalakat és nagy bináris fájlokat tartalmazhatnak. A `.env` és a Home Assistant-token szintén kizárt.
