@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .store import Store
 from .pipeline import Pipeline
 from .ha_client import HAClient
+from .credentials import CredentialStore, CredentialStoreError
 
 
 class Approval(BaseModel):
@@ -46,7 +47,7 @@ class Settings(BaseModel):
     inbox: str = Field(max_length=4096)
 
 
-def create_app(data_dir: Path | str, *, watch=True):
+def create_app(data_dir: Path | str, *, watch=True, credential_store=None, environment=None, dotenv_path=None):
     data = Path(data_dir).resolve()
     data.mkdir(parents=True, exist_ok=True)
     (data / 'inbox').mkdir(exist_ok=True)
@@ -55,6 +56,9 @@ def create_app(data_dir: Path | str, *, watch=True):
     if settings_file.exists():
         settings.update(json.loads(settings_file.read_text()))
     store = Store(data / 'readings.sqlite3')
+    credentials = credential_store or CredentialStore()
+    environment = os.environ if environment is None else environment
+    dotenv_path = Path.cwd() / '.env' if dotenv_path is None else Path(dotenv_path)
     recognition = {
         'mode': os.getenv('GASPHOTO_OCR', 'local'),
         'base_url': os.getenv('VISION_BASE_URL', ''),
@@ -211,6 +215,21 @@ def create_app(data_dir: Path | str, *, watch=True):
     app.state.store = store
     app.state.pipeline = pipeline
 
+    def ha_token():
+        return credentials.token(environment)
+
+    def ha_token_storage():
+        return credentials.source(environment)
+
+    def remove_legacy_token_from_dotenv():
+        if not dotenv_path.exists():
+            return
+        lines = dotenv_path.read_text(encoding='utf-8').splitlines(keepends=True)
+        retained = [line for line in lines if not line.strip().startswith(('HA_TOKEN=', 'export HA_TOKEN='))]
+        temporary = dotenv_path.with_suffix('.tmp')
+        temporary.write_text(''.join(retained), encoding='utf-8')
+        temporary.replace(dotenv_path)
+
     @app.middleware('http')
     async def local_boundary(request: Request, call_next):
         origin = request.headers.get('origin')
@@ -239,7 +258,8 @@ def create_app(data_dir: Path | str, *, watch=True):
     @app.get('/api/status')
     def status():
         return {'session_token': token, 'inbox': settings['inbox'], 'ocr': recognition['mode'],
-                'ha_configured': bool(os.getenv('HA_URL') and os.getenv('HA_TOKEN')),
+                'ha_configured': bool(environment.get('HA_URL') and ha_token()),
+                'ha_token_storage': ha_token_storage(),
                 'auto_accept': False, 'watch': watch, 'activity': activity,
                 'training': training_status(), 'digit_training': digit_training_status(),
                 'tools': {'exiftool': bool(shutil.which('exiftool')), 'tesseract': bool(shutil.which('tesseract')), 'swift': bool(shutil.which('swift'))}}
@@ -335,17 +355,30 @@ def create_app(data_dir: Path | str, *, watch=True):
 
     @app.post('/api/ha/check')
     def ha_check():
-        with HAClient(os.getenv('HA_URL', ''), os.getenv('HA_TOKEN', '')) as client:
+        with HAClient(environment.get('HA_URL', ''), ha_token()) as client:
             return client.check()
+
+    @app.post('/api/ha/migrate-token')
+    def migrate_ha_token():
+        legacy_token = environment.get('HA_TOKEN', '')
+        if not legacy_token:
+            raise ValueError('Nincs .env-ben tárolt token, amit át lehetne költöztetni.')
+        credentials.save(legacy_token)
+        try:
+            remove_legacy_token_from_dotenv()
+        except OSError as exc:
+            raise CredentialStoreError('A token a rendszer hitelesítő tárhelyére mentve, de a .env fájlból nem törölhető automatikusan.') from exc
+        environment.pop('HA_TOKEN', None)
+        return {'ha_token_storage': ha_token_storage()}
 
     @app.post('/api/sync')
     def sync():
-        if not os.getenv('HA_URL') or not os.getenv('HA_TOKEN'):
+        if not environment.get('HA_URL') or not ha_token():
             raise ValueError('A HA-kapcsolat nincs beállítva. A jóváhagyott leolvasások biztonságban vannak a helyi várólistán.')
         with gate:
             pending = sorted(store.pending_readings(), key=lambda r: r['captured_at'])
             synced = 0
-            with HAClient(os.environ['HA_URL'], os.environ['HA_TOKEN']) as client:
+            with HAClient(environment['HA_URL'], ha_token()) as client:
                 for offset in range(0, len(pending), 100):
                     batch = pending[offset:offset + 100]
                     try:

@@ -41,7 +41,7 @@ Másold a mintafájlt `.env` néven, és csak a szükséges beállításokat tö
 cp .env.example .env
 ```
 
-Helyi felismeréshez a `GASPHOTO_OCR=local` az alapérték. Home Assistant-feltöltéshez add meg a `HA_URL` és `HA_TOKEN` értékét; a token csak a Macen marad, és nem kerül a böngészőbe vagy a GitHubra.
+Helyi felismeréshez a `GASPHOTO_OCR=local` az alapérték. Home Assistant-feltöltéshez add meg a `HA_URL` értékét. A `HA_TOKEN` csak egyszeri, régi beállításokból való átköltöztetéshez használható; a futó alkalmazás a tokent a macOS Kulcskarikájából olvassa.
 
 Indítás:
 
@@ -98,6 +98,34 @@ Indítsd újra a Home Assistantot, majd a Mac alkalmazásban a **HA-kapcsolat** 
 - `gas_photo.import_readings` – pontos, offsetes időponttal mentett leolvasás;
 - `gas_photo.get_readings` – a pontos napló visszaolvasása;
 - `gas_photo.get_statistics` – a Recorder tényleges órás statisztikáinak ellenőrzése.
+
+## A Home Assistant token biztonságos tárolása
+
+Az alkalmazás nem tárol Home Assistant-tokent az SQLite-adatbázisban, a `data/` könyvtárban vagy a böngészőben. Macen a token a rendszer **Kulcskarikájába** kerül, amelyhez a helyi, futó alkalmazás fér hozzá.
+
+### Első átköltöztetés Macen
+
+1. Egyetlen alkalommal írd a Home Assistant hosszú élettartamú tokenjét a helyi, Gitből kizárt `.env` fájl `HA_TOKEN=` sorába.
+2. Indítsd el az alkalmazást, majd nyisd meg a **Beállítások** nézetet.
+3. A **Home Assistant hozzáférés** kártyán nyomd meg a **Token átköltöztetése a Kulcskarikába** gombot.
+4. Az alkalmazás elmenti a tokent a macOS Kulcskarikába, a `HA_TOKEN=` sort pedig eltávolítja a `.env` fájlból. A böngésző és az API-válaszok a továbbiakban sem kapják meg a token értékét.
+
+Ezután a `.env` fájlban csak a nem titkos `HA_URL` marad. A Kulcskarika bejegyzés a **Keychain Access / Kulcskarikaelérés** alkalmazásban kezelhető; a szolgáltatás neve `hu.m3nt1.gas-photo`, a fióknév `home-assistant-token`.
+
+### Szerverre költöztetés
+
+Fej nélküli szerveren a Kulcskarika helyett használj külön, kizárólag a szolgáltatás felhasználója által olvasható secret-fájlt. A `.env` fájlba csak az elérési út kerül:
+
+```text
+HA_URL=https://home-assistant.example
+HA_TOKEN_FILE=/run/secrets/gas_photo_ha_token
+```
+
+A secret-fájl jogosultsága kötelezően `0400` vagy `0600`; az alkalmazás a csoport vagy más felhasználó számára olvasható fájlt elutasítja. Docker vagy rendszer-szolgáltatás esetén ezt a fájlt read-only secretként érdemes csatolni. A token ne legyen környezeti változó, parancssori argumentum, Docker image, napló vagy repository tartalma.
+
+### Leendő iOS és Android alkalmazás
+
+A telefonos alkalmazás nem örökli és nem csomagolja be a Mac tokenjét. Az iOS kiadás az **iOS Keychain**, az Android kiadás az **Android Keystore** tárolóját használja, és saját Home Assistant-bejelentkezési/engedélyezési folyamattal kap visszavonható tokent. Így egy elveszett telefon hozzáférése külön visszavonható, a Mac vagy szerver tokenje változtatása nélkül.
 
 A `queued` válasz a tartós naplózást és a Home Assistant feldolgozási sorába helyezést jelenti; a Recorder-eredményt a `get_statistics` olvasásával kell ellenőrizni. A komponens nem módosítja a korábbi Energy-forrásokat.
 

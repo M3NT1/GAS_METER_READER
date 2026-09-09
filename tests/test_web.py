@@ -5,6 +5,18 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from gasphoto.web import create_app
+from gasphoto.credentials import CredentialStore
+
+
+class FakeKeyring:
+    def __init__(self):
+        self.values = {}
+
+    def get_password(self, service, username):
+        return self.values.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.values[(service, username)] = password
 
 
 def session(tmp_path):
@@ -115,6 +127,22 @@ def test_model_and_inbox_controls_are_exposed_in_settings_view(tmp_path):
         page = client.get('/').text
         assert 'data-view="settings"' in page
         assert 'id="settings-panel"' in page
+
+
+def test_legacy_token_can_be_migrated_to_the_system_credential_store(tmp_path):
+    dotenv = tmp_path / '.env'
+    dotenv.write_text('HA_URL=http://homeassistant.local:8123\nHA_TOKEN=old-token\n')
+    environment = {'HA_URL': 'http://homeassistant.local:8123', 'HA_TOKEN': 'old-token'}
+    credentials = CredentialStore(keyring_backend=FakeKeyring())
+    with TestClient(create_app(tmp_path, watch=False, credential_store=credentials, environment=environment, dotenv_path=dotenv)) as client:
+        before = client.get('/api/status').json()
+        assert before['ha_token_storage'] == 'migration_required'
+        response = client.post('/api/ha/migrate-token', headers={'X-Session-Token': before['session_token']})
+        assert response.status_code == 200, response.text
+        assert response.json()['ha_token_storage'] == 'keychain'
+        assert credentials.token(environment) == 'old-token'
+        assert 'HA_TOKEN' not in environment
+        assert 'HA_TOKEN=' not in dotenv.read_text()
 
 
 def test_digit_training_status_exposes_test_accuracy_and_activation(tmp_path):
